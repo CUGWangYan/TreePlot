@@ -1,0 +1,295 @@
+# -*- coding: utf-8 -*-
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.sparse import csr_matrix
+
+
+link=np.array([0,1,1,2,2,2,3,3,3])
+congestedLink=np.array([0,1,1,0,0,0,0,0,1])
+def treeLayout(parent):
+    #Lay out tree or forest
+    #parent is the vector of parent pointers,with 0 for a root
+    #post is a postorder permutation on the tree nodes
+    #xx and yy are the vector of coordinates in the unit square at which
+    #to lay out the nodes of the tree to make a nice picture 
+    #Optionally h is the height of the tree and s is the number of vertices
+    #in the top-level separator
+    pv=[]
+    n=len(parent)
+    parent,pv=fixparent(parent)
+    
+    #j=find(parent) in matlab
+    j=np.nonzero(parent)
+    jj=[x+1 for x in j[0]]
+    
+    #A=sparse(parent(j),j,1 n,n); in matlab
+    A=np.zeros((n,n))
+    for i in range(len(jj)):
+        A[parent[i]-1,jj[i]-1]=1
+    A=A+A.T+np.eye(n)
+    post=etree(A)
+
+#Add a dummy root node and identify the leaves
+    for _ in range(len(parent)):
+        if parent[_]==0:
+            parent[_]=n+1       #change all 0s to n+1s
+
+#in postorder computer height and descendant leaf intervals
+#space leaves evenly in x
+    isaleaf = [1 for _ in range(n+1)]
+    for i in range(len(parent)):
+         isaleaf[parent[i]-1]=0
+        
+#xmin = n(1,ones(1,n+1)) in matlab
+#xmax = zeros(1,n+1);
+#height = zeros(1,n+1);
+#nkids = zeros(1,n+1);
+    
+    xmin = [n for _ in range(len(parent)+1)]
+    xmax = [0 for _ in range(len(parent)+1)]
+    height=[0 for _ in range(len(parent)+1)]
+    nkids =[0 for _ in range(len(parent)+1)]
+    nleaves = 0
+
+    for i in range(1,n+1):
+        node = post[i-1]
+        if isaleaf[node-1]:
+            nleaves = nleaves + 1
+            xmin[node-1] = nleaves
+            xmax[node-1] = nleaves
+
+        dad = parent[node-1]
+        height[dad-1] = max(height[dad-1],height[node-1]+1)
+        xmin[dad-1] = min(xmin[dad-1],xmin[node-1])
+        xmax[dad-1] = max(xmax[dad-1],xmax[node-1])
+        nkids[dad-1] = nkids[dad-1] + 1
+        
+    #compute coordinates leaving a little space on all sides
+    treeht = height[n] - 1
+    deltax = 1/(nleaves+1)
+    deltay = 1/(treeht+2)
+    x=[]
+    y=[]
+    
+    #Omit the dummy node
+    for _ in range(len(xmin)):
+        x.append(deltax*(xmin[_]+xmax[_])/2)
+    for _ in range(len(height)):
+        y.append(deltay*(height[_]+1))
+
+    h = treeht
+    for i in range(-1,-1*len(nkids)):
+        if nkids[i]!=1:
+            s=n+1-i
+            break
+        else:
+            s=n+1
+    xx=[]
+    yy=[]
+    flagx=1
+    flagy=1
+    #it's hard to understand 
+    #x(pv)=x
+    #y(pv)=y in matlab
+    for _ in  pv:
+       for i in range(len(pv)):
+           if pv[i]==flagx:
+               xx.append(x[i])
+               flagx=flagx+1
+       for i in range(len(pv)):
+           if pv[i]==flagy:
+               yy.append(y[i])
+               flagy=flagy+1
+
+
+    return xx,yy
+
+
+def etree(mat):
+    ##为其上三角形是 A 的上三角形的对称方阵返回消去树？？？
+    if mat.shape[0]==mat.shape[1]:
+        return [x for x in range(1,mat.shape[0]+1)]
+    else:
+        pass
+
+def fixparent(parent):
+    #Fix order of parent vector
+    #[a,pv]= fixparent(B) takes a vector of parent nodes for an elimination
+    #tree, and re-orders it to produce an equivalent vector
+    #a in which parent nodes are always higher-number than child nodes
+    #if B is an elimination tree produced by the tree funtion, this step will not
+    #be necessary. PV is a permutation vector,so that A=B(pv)
+    n=len(parent)
+    a=parent
+    a[a==0] = n+1
+    pv = [x for x in range(1,n+1) ]
+    niter = 0
+    while(True):
+        temp=[_ for _ in range(1,n+1)]
+        x=[]
+        for i in range(len(a)):
+            if (a[i]<temp[i]):
+                x.append(i+1)
+            else:
+                x.append(0)
+
+        k=np.nonzero(x)
+        kk=[xx+1 for xx in k]
+        if len(kk[0])==0:
+            break
+        kk=kk[0][0]
+        j=a[kk-1]
+        ##
+        ## a=[a(1:j-1 a(k) a(j:k-1) a(k+1:end)];
+        a=a.tolist()
+        tem=a[kk-1]
+        del(a[kk-1])
+        a.insert(j-1,tem)
+        a=np.array(a)
+        ##
+        ##pv = [pv(1:j-1) pv(k) pv(j:k-1) pv(k+1:end)]
+        tem=pv[kk-1]
+        del(pv[kk-1])
+        pv.insert(j-1,tem)
+        ##
+        ##t = (a>=j & a<k)
+        ##a(a==k)=j
+        ##a(t)=a(t)+1
+        te = [0 for _ in range(len(a))]
+        for _ in range(len(a)):
+            if j<=a[_]<kk:
+                te[_]=1
+        for _ in range(len(a)):
+            if a[_]==kk:
+                a[_]=j
+        for _ in range(len(te)):
+            if te[_]==1:
+                a[_]=a[_]+1
+        niter = niter + 1
+
+
+    a[a>n] = 0
+    return a,pv
+
+def TreePlot(link,congestedLink,plotTitle):
+    x,y=treeLayout(link)#调用树布局函数
+    n=len(link)
+    i=0
+    for f in link:
+        if f==0:
+            i+=1
+    leaves=[]
+    while i<n+1:
+        b=0
+        j=0
+        while j<n:
+            if i==link[j]:#如果有了第一个父节点为i的点就跳出循环
+                b=j
+                break
+            j+=1
+        if b==0:#如果没有找到父节点为i的节点，就为叶子节点
+            leaves.append(i)
+        i+=1
+    #leaves=[4,6,10,11,12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33]
+    
+    num_layers=1/min(y)-1
+    num_layers=int(num_layers+0.5)
+    #chains=np.zeros((num_layers,len(leaves)))
+    i=0
+    chains=[]
+    while i<len(leaves):#判断链路并加入到chains队列中
+        index=leaves[i]-1
+        chain=[]
+        chain.append(index + 1)
+        parent_index=link[index]-1
+        j=1
+        while parent_index != 0:
+            chain.append(parent_index+1)
+            parent_index=link[parent_index]-1
+            j += 1
+        chain.append(1)
+        chain.reverse()
+        chains.append(chain)
+        i += 1
+    
+    y_new=y
+    y_new=np.zeros(len(y))
+    i = 0
+    while i<len(y):#调整y的值
+        r=0
+        j=0
+        b=0
+        while j<len(leaves):
+            r=0
+            for c in chains[j]:
+                if c==i+1:
+                    b=1
+                    break
+                elif c!=i+1:
+                    r += 1
+                    
+            if b==1:
+                break
+            elif b==0:
+                j += 1
+        y_new[i]=0.9-(r-1)/(num_layers+1)
+        i += 1
+    plt.figure()
+    #画线
+    i=0
+    while i<len(leaves):
+        j=0
+        while j+1<len(chains[i]):
+            line_x=[]
+            line_y=[]
+            line_x.append(x[chains[i][j]-1])
+            line_x.append(x[chains[i][j+1]-1])
+            line_y.append(y_new[chains[i][j]-1])
+            line_y.append(y_new[chains[i][j+1]-1])
+            if j+2==len(chains[i]) and congestedLink[chains[i][j+1]-1]==0:
+                plt.plot(line_x,line_y,'g-',linewidth=0.5)
+            elif j+2==len(chains[i]) and congestedLink[chains[i][j+1]-1]==1:
+                plt.plot(line_x,line_y,'r-',linewidth=0.5)
+            elif congestedLink[chains[i][j+1]-1]==0:
+                plt.plot(line_x,line_y,'g-')
+            elif congestedLink[chains[i][j+1]-1]==1:
+                plt.plot(line_x,line_y,'r-')
+            j += 1
+        i += 1
+    #画点
+    i=0
+    while i<len(leaves):
+        j=0
+        while j<len(chains[i]):
+            point_x=[]
+            point_y=[]
+            point_x.append(x[chains[i][j]-1])
+            point_y.append(y_new[chains[i][j]-1])
+            if j+1==len(chains[i]):#画出叶子节点
+                plt.plot(point_x,point_y,'bo',linewidth=0.5)
+            else:#画出非叶子节点
+                plt.plot(point_x,point_y,'ko')
+            j += 1
+        i += 1
+    plt.title(plotTitle)
+    
+    
+    for i in range(0,len(x)):#加上标号
+        plt.text(x[i],y_new[i],str(i+1),family='serif',style='italic',ha='right',wrap=True)
+    
+    #plt.plot(x[-1],y_new[-1],'bo',label='Destination Node')
+    #plt.plot(x[0],y_new[0],'ko',label='Internal Node')
+    #plt.plot(x[0:1],y_new[0:1],'g-',label='Internal Link')
+    #plt.plot(label='line')
+    xx=[x[0],x[0]]
+    yy=[0.9-(-2)/(num_layers+1),y_new[0]]
+    if congestedLink[0]==0:
+        plt.plot(xx,yy,'g-')
+    else:
+        plt.plot(xx,yy,'r-')
+    plt.plot(xx[0],yy[0],'k*')
+    plt.text(xx[0],yy[0],str(0),family='serif',style='italic',ha='right',wrap=True)
+    plt.legend()
+    
+    
+TreePlot(link,congestedLink,'A')
